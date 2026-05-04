@@ -61,6 +61,8 @@ class FitPreparation:
             raise ValueError(f"fit_time expects axes containing at least T, Y, and X after channel/Z handling. Got remaining axes='{work_axes}'.")
 
         fit_array = move_to_axes(np.asarray(work), work_axes, "TYX")
+        if fit_array.shape[0] == 0:
+            raise ValueError("fit_time requires at least one frame. Got T=0.")
         return np.asarray(fit_array, dtype=np.float32), "TYX"
 
     @classmethod
@@ -126,20 +128,15 @@ class ApplyPreparation:
     original_shape: tuple[int, ...]
     apply_array: NDArray[np.generic]
     apply_axes: str
-    synthetic_time_axis: bool = False
 
     @classmethod
     def for_time(cls, array: NDArray[np.generic], axes: str) -> ApplyPreparation:
         source = np.asarray(array)
         source_axes = normalize_axes(source, axes)
+        require_axes_member(source_axes, "T", "apply_time")
 
         apply_axes = canonical_axes(source_axes)
         apply_array = move_to_axes(source, source_axes, apply_axes)
-        synthetic_time_axis = False
-        if "T" not in apply_axes:
-            apply_array = np.expand_dims(apply_array, axis=0)
-            apply_axes = "T" + apply_axes
-            synthetic_time_axis = True
 
         return cls(
             original_array=source,
@@ -147,8 +144,7 @@ class ApplyPreparation:
             original_dtype=source.dtype,
             original_shape=source.shape,
             apply_array=apply_array,
-            apply_axes=apply_axes,
-            synthetic_time_axis=synthetic_time_axis,)
+            apply_axes=apply_axes,)
 
     @classmethod
     def for_channel(cls, array: NDArray[np.generic], axes: str) -> ApplyPreparation:
@@ -165,8 +161,7 @@ class ApplyPreparation:
             original_dtype=source.dtype,
             original_shape=source.shape,
             apply_array=apply_array,
-            apply_axes=apply_axes,
-            synthetic_time_axis=False,)
+            apply_axes=apply_axes,)
 
     def iter_apply_substacks(self, required_axes: str) -> Iterator[tuple[tuple[slice | int, ...], NDArray[np.float32]]]:
         """
@@ -205,18 +200,12 @@ class ApplyPreparation:
 
     def restore_apply_output(self, transformed_apply: NDArray[np.floating]) -> NDArray[np.generic]:
         """
-        Restore the transformed apply array to the original axes, dtype, and shape of the input apply array. This includes removing any synthetic time axis, moving axes back to the original order, and converting dtype back to the original dtype with appropriate clipping for integer types.
+        Restore the transformed apply array to the original axes, dtype, and shape of the input apply array. This includes moving axes back to the original order and converting dtype back to the original dtype with appropriate clipping for integer types.
         """
         if transformed_apply.shape != self.apply_array.shape:
             raise ValueError(f"Transformed apply array shape mismatch. Expected {self.apply_array.shape}, got {transformed_apply.shape}.")
 
-        restored = transformed_apply
-        apply_axes_for_restore = self.apply_axes
-        if self.synthetic_time_axis:
-            restored = np.squeeze(restored, axis=0)
-            apply_axes_for_restore = apply_axes_for_restore[1:]
-
-        output = move_to_axes(restored, apply_axes_for_restore, self.original_axes)
+        output = move_to_axes(transformed_apply, self.apply_axes, self.original_axes)
         return self._restore_dtype(output, self.original_dtype)
 
     @staticmethod

@@ -37,25 +37,23 @@ def test_fit_preparation_tzyx_projects_z_to_tyx(translated_tyx_stack: np.ndarray
     np.testing.assert_array_equal(preparation.fit_array, array.max(axis=1).astype(np.float32))
 
 
-@pytest.mark.parametrize(
-    ("axes", "array"),
-    [
-        ("YX", np.pad(np.full((4, 4), 1000, dtype=np.uint16), ((2, 6), (3, 3)))),
-        ("CYX", np.stack([np.pad(np.full((4, 4), 1000, dtype=np.uint16), ((2, 6), (3, 3))), np.pad(np.full((4, 4), 1000, dtype=np.uint16), ((4, 4), (5, 1)))], axis=0)),
-    ],
-)
-def test_apply_preparation_adds_synthetic_t_when_missing(axes: str, array: np.ndarray) -> None:
-    preparation = ApplyPreparation.for_time(array, axes=axes)
+def test_apply_preparation_requires_t_axis() -> None:
+    """Verify apply_time requires T axis (no synthetic T support)."""
+    array = np.pad(np.full((4, 4), 1000, dtype=np.uint16), ((2, 6), (3, 3)))
+    
+    with pytest.raises(ValueError, match="axis 'T'"):
+        ApplyPreparation.for_time(array, axes="YX")
 
-    assert preparation.synthetic_time_axis is True
-    assert preparation.apply_axes.startswith("T")
-    assert preparation.apply_array.shape[0] == 1
 
-    restored = preparation.restore_apply_output(preparation.apply_array.astype(np.float32))
-
-    assert restored.shape == array.shape
-    assert restored.dtype == array.dtype
-    np.testing.assert_array_equal(restored, array)
+def test_apply_preparation_requires_t_with_channel() -> None:
+    """Verify apply_time requires T axis even with C present."""
+    array = np.stack([
+        np.pad(np.full((4, 4), 1000, dtype=np.uint16), ((2, 6), (3, 3))),
+        np.pad(np.full((4, 4), 1000, dtype=np.uint16), ((4, 4), (5, 1)))
+    ], axis=0)
+    
+    with pytest.raises(ValueError, match="axis 'T'"):
+        ApplyPreparation.for_time(array, axes="CYX")
 
 
 def test_apply_preparation_restores_original_axes_order(translated_tyx_stack: np.ndarray) -> None:

@@ -2,9 +2,8 @@ from __future__ import annotations
 
 import numpy as np
 import numpy.testing as npt
-from pystackreg import StackReg
 
-from stackalign.backends.pystackreg_backend import PystackregBackend
+from stackalign.backends.pystackreg import PystackregBackend
 
 
 def _center_of_mass(image: np.ndarray) -> tuple[float, float]:
@@ -20,10 +19,12 @@ def test_backend_time_fit_and_apply_roundtrip_shape_dtype_tyx(translated_tyx_sta
     backend = PystackregBackend()
 
     model = backend.fit_time(translated_tyx_stack, axes="TYX", method="translation", reference_strategy="previous")
-    result = backend.apply_time(translated_tyx_stack, axes="TYX", model=model)
+    result = backend.apply(translated_tyx_stack, axes="TYX", model=model)
 
     assert model.mode == "time"
-    assert isinstance(model.transform, StackReg)
+    assert isinstance(model.transform, np.ndarray)
+    assert model.transform.shape[0] == translated_tyx_stack.shape[0]
+    assert model.transform.shape[1:] == (3, 3)
     assert result.shape == translated_tyx_stack.shape
     assert result.dtype == translated_tyx_stack.dtype
 
@@ -32,7 +33,7 @@ def test_backend_apply_on_tcyx_applies_same_time_transform_to_all_channels(trans
     backend = PystackregBackend()
 
     model = backend.fit_time(translated_tcyx_stack, axes="TCYX", fit_channel=0, method="translation", reference_strategy="previous")
-    result = backend.apply_time(translated_tcyx_stack, axes="TCYX", model=model)
+    result = backend.apply(translated_tcyx_stack, axes="TCYX", model=model)
 
     assert result.shape == translated_tcyx_stack.shape
     assert result.dtype == translated_tcyx_stack.dtype
@@ -43,7 +44,7 @@ def test_backend_apply_on_tczyx_preserves_c_and_z(translated_tczyx_stack: np.nda
     backend = PystackregBackend()
 
     model = backend.fit_time(translated_tczyx_stack, axes="TCZYX", fit_channel=0, method="translation", reference_strategy="previous")
-    result = backend.apply_time(translated_tczyx_stack, axes="TCZYX", model=model)
+    result = backend.apply(translated_tczyx_stack, axes="TCZYX", model=model)
 
     assert result.shape == translated_tczyx_stack.shape
     assert result.dtype == translated_tczyx_stack.dtype
@@ -57,18 +58,18 @@ def test_backend_fit_channel_on_cyx_returns_one_transform_per_channel(translated
     model = backend.fit_channel(translated_cyx_stack, axes="CYX", method="translation", reference_channel=0, reference_frame=0)
 
     assert model.mode == "channel"
-    assert isinstance(model.transform, list)
-    assert len(model.transform) == translated_cyx_stack.shape[0]
+    assert isinstance(model.transform, np.ndarray)
+    assert model.transform.shape[0] == translated_cyx_stack.shape[0]
+    assert model.transform.shape[1:] == (3, 3)
     assert model.reference_channel == 0
-    assert model.transform[0] is None
-    assert all(channel_transform is None or isinstance(channel_transform, StackReg) for channel_transform in model.transform)
+    npt.assert_allclose(model.transform[0], np.eye(3, dtype=np.float64), atol=1e-8)
 
 
 def test_backend_fit_channel_on_tcyx_uses_reference_frame_zero(translated_tcyx_channel_stack: np.ndarray) -> None:
     backend = PystackregBackend()
 
     model = backend.fit_channel(translated_tcyx_channel_stack, axes="TCYX", method="translation", reference_channel=0, reference_frame=0)
-    result = backend.apply_channel(translated_tcyx_channel_stack, axes="TCYX", model=model)
+    result = backend.apply(translated_tcyx_channel_stack, axes="TCYX", model=model)
 
     assert result.shape == translated_tcyx_channel_stack.shape
     assert result.dtype == translated_tcyx_channel_stack.dtype
@@ -85,7 +86,7 @@ def test_backend_fit_channel_on_tczyx_uses_max_projection_for_fit_and_preserves_
     backend = PystackregBackend()
 
     model = backend.fit_channel(translated_tczyx_channel_stack, axes="TCZYX", method="translation", reference_channel=0, reference_frame=0)
-    result = backend.apply_channel(translated_tczyx_channel_stack, axes="TCZYX", model=model)
+    result = backend.apply(translated_tczyx_channel_stack, axes="TCZYX", model=model)
 
     assert result.shape == translated_tczyx_channel_stack.shape
     assert result.dtype == translated_tczyx_channel_stack.dtype
@@ -104,7 +105,7 @@ def test_backend_apply_channel_preserves_original_axis_order(translated_tcyx_cha
     array = np.transpose(translated_tcyx_channel_stack, (2, 3, 0, 1))
 
     model = backend.fit_channel(translated_tcyx_channel_stack, axes="TCYX", method="translation", reference_channel=0, reference_frame=0)
-    result = backend.apply_channel(array, axes="YXTC", model=model)
+    result = backend.apply(array, axes="YXTC", model=model)
 
     assert result.shape == array.shape
     assert result.dtype == array.dtype
@@ -129,3 +130,11 @@ def test_backend_fit_channel_invalid_reference_frame_raises(translated_cyx_stack
 
     with np.testing.assert_raises_regex(ValueError, "reference_frame"):
         backend.fit_channel(translated_cyx_stack, axes="CYX", reference_channel=0, reference_frame=1)
+
+
+def test_backend_fit_time_empty_t_raises() -> None:
+    backend = PystackregBackend()
+    empty_tyx = np.zeros((0, 16, 16), dtype=np.float32)
+
+    with np.testing.assert_raises_regex(ValueError, "at least one frame"):
+        backend.fit_time(empty_tyx, axes="TYX", method="translation", reference_strategy="first")

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from .protocol import Backend
-from .pystackreg_backend import PystackregBackend
+from .pystackreg import PystackregBackend
 
 
 def get_backend(name: str = "pystackreg") -> Backend:
