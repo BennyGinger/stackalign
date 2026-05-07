@@ -1,209 +1,232 @@
 # stackalign (internal)
 
-Lightweight registration module used inside the workspace.
-
-This is **not a general-purpose library**.
-Design favors:
-
-* clarity
-* deterministic behavior
-* performance on real microscopy stacks
+Lightweight registration module for microscopy stacks.
+**Not a public library.** Designed for clarity, determinism, and real-world performance.
 
 ---
 
 ## Core idea
 
-Everything is built around **explicit transform matrices**:
+Everything is based on **explicit transform matrices**:
 
 * time-wise → `(T, 3, 3)`
 * channel-wise → `(C, 3, 3)`
 
-Fit once → apply anywhere (same shape semantics)
-
+Fit once → apply anywhere
 No hidden state, no implicit behavior.
 
 ---
 
-## Pipeline overview
+## Pipeline
 
-1. **axes.py**
-
-   * validate + normalize axes (`T, C, Z, Y, X`)
-   * reorder to canonical layout
-
+1. **axes.py** → validate + normalize (`T, C, Z, Y, X`)
 2. **preparation.py**
 
    * build fit views:
 
      * time → `TYX`
      * channel → `CYX`
-   * collapse Z via max projection (fit only)
-   * restore original shape/dtype after apply
+   * Z → max projection (fit only)
+   * restore shape/dtype on apply
+3. **backends/**
 
-3. **backends/pystackreg/**
-
-   * `time_wise.py` → time registration logic
-   * `channel_wise.py` → channel registration logic
-   * `execution.py` → parallel execution (process/thread)
-   * `utils.py` → helpers (StackReg, tmats, accumulation)
-
-4. **models.py**
-
-   * `TransformModel` stores:
-
-     * mode
-     * method
-     * transform matrices
-     * reference_channel (channel mode)
-
-5. **api.py**
-
-   * user entry point (`RegisterModel`)
-   * dispatches to backend
+   * `time_wise.py` / `channel_wise.py` → logic
+   * `execution.py` → parallelism
+   * backend-specific implementations
+4. **models.py** → `TransformModel`
+5. **api.py** → `RegisterModel` entry point
 
 ---
 
 ## Key design decisions
 
-### 1. No stack-native pystackreg
+### 1. Explicit transforms only
 
-We do **not** use:
+* all backends return `(N, 3, 3)` matrices
+* deterministic + reusable
+* no backend-specific state
+
+---
+
+### 2. No stack-native registration
+
+We do NOT use:
 
 * `register_stack`
 * `transform_stack`
 
 Reason:
-→ too slow on real datasets
+→ too slow on real data
 
 Instead:
 
-* explicit per-frame / per-channel transforms
+* frame/channel-wise operations
 * parallel execution
 
 ---
 
-### 2. "previous" is cumulative (important)
+### 3. `"previous"` is cumulative (critical)
 
-We do NOT apply pairwise transforms directly.
-
-Process:
-
-```
-pairwise:   t -> t-1
-accumulate: t -> frame 0
+```text
+pairwise:   t → t-1
+accumulate: t → frame 0
 ```
 
-So final result is globally aligned.
-
-See:
-
-* `utils.accumulate_pairwise_tmats`
+→ ensures global alignment, not drift chaining
 
 ---
 
-### 3. Parallelism is internal
-
-* default: process-based
-* controlled in `execution.py`
-* user is not aware of it
-
-No public config. Keep it that way.
-
----
-
-### 4. Fit is simplified, apply is full
+### 4. Fit ≠ Apply
 
 Fit:
 
-* single channel (if needed)
-* Z max projection
+* reduced view (single channel, Z-projected)
 * float32
 
 Apply:
 
-* full data (T/C/Z preserved)
+* full data (T/C/Z)
 * dtype restored exactly
 
 ---
 
-### 5. Fail fast
+### 5. Parallelism is internal
 
-We do NOT auto-infer:
-
-* missing `T` for time-wise → error
-* missing `C` for channel-wise → error
-* missing `reference_channel` → error
-
-No silent behavior.
+* process-based by default
+* handled in `execution.py`
+* not exposed to user
 
 ---
 
-## Performance model
+### 6. Fail fast
 
-Time-wise:
+No implicit behavior:
 
-* fit → parallel frame registration
-* apply → parallel per-frame transform
+* missing `T` → error (time-wise)
+* missing `C` → error (channel-wise)
+* missing `reference_channel` → error
 
-Channel-wise:
+---
 
-* fit → cheap (few channels)
-* apply → can be parallelized per image
+## Backends (practical ranking)
 
-Critical point:
-→ large arrays → avoid copying → small tasks
+### Time-wise
+
+1. **scikit (phase_cross_correlation)**
+
+   * fastest
+   * translation only
+   * best default for drift correction
+
+2. **pystackreg**
+
+   * robust
+   * translation / rigid / affine
+   * slightly better than cv2 in difficult cases
+
+3. **cv2 (ECC)**
+
+   * similar to pystackreg
+   * slightly less stable depending on reference
+
+---
+
+### Channel-wise
+
+1. **cv2 (ECC)**
+
+   * fastest (fit + apply)
+   * supports rigid_body (useful for dual-camera)
+
+2. **scikit**
+
+   * fast
+   * translation only
+
+3. **pystackreg**
+
+   * slowest
+   * still reliable fallback
+
+---
+
+## Usage rules (important)
+
+### Time-wise
+
+* corrects **sample drift**
+* best strategy:
+
+  * `"previous"` → default
+  * `"mean"` → stable stacks
+  * `"first"` → short stacks only
+
+---
+
+### Channel-wise
+
+* corrects **optical misalignment**
+* works only if channels share structure
+
+Good:
+
+* GFP ↔ RFP (same cells)
+* nucleus ↔ membrane
+* dual-camera misalignment
+
+Bad:
+
+* sparse fluorescence vs unrelated signal
+
+Defaults:
+
+* translation → standard
+* rigid_body → dual-camera setups
+* affine → advanced / use cautiously
 
 ---
 
 ## Constraints
 
 * axes must include `Y` and `X`
-* channel-wise requires explicit reference channel
 * Z motion is ignored during fit (max projection)
+* channel-wise requires explicit reference channel
+
+---
+
+## Performance model
+
+* avoid large array copies
+* operate on small independent tasks
+* parallelize per frame/channel
 
 ---
 
 ## What NOT to change lightly
 
-* explicit tmats representation
+* transform representation `(N, 3, 3)`
 * `"previous"` accumulation logic
-* separation between `preparation` and backend
-* internal parallel execution model
-
-These are core to performance and correctness.
+* separation: preparation ↔ backend
+* internal parallel execution
 
 ---
 
-## Where to look when debugging
+## Debug guide
 
-* wrong alignment → `time_wise.py` + accumulation
+* wrong alignment → backend logic (`time_wise.py`)
+* drift issues → `"previous"` accumulation
 * wrong shape/dtype → `preparation.py`
-* performance issues → `execution.py`
-* axis issues → `axes.py`
-
----
-
-## Tests
-
-Tests cover:
-
-* shape/dtype preservation
-* axis roundtrip
-* TCZYX behavior
-* time + channel consistency
-
-Run them before refactoring anything critical.
+* slow → `execution.py`
+* axis bugs → `axes.py`
 
 ---
 
 ## Mental model
 
-Think of this module as:
-
-> "build transforms on a simple view → apply them everywhere safely"
+> Build transforms on a simple view → apply them everywhere safely
 
 Not:
 
-> "smart registration system"
+> a “smart” registration system
 
 Keep it explicit.

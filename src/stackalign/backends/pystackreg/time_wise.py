@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+from functools import partial
+
 import numpy as np
 from numpy.typing import NDArray
 
 from stackalign.backends.models import TransformModel
 from stackalign.constants import Method, ReferenceStrategy
 from stackalign.preparation import ApplyPreparation, FitPreparation
-from stackalign.backends.pystackreg.execution import apply_tyx_substack, fit_frames_to_reference, fit_previous_pairwise_tmats
-from stackalign.backends.pystackreg.utils import accumulate_pairwise_tmats, validate_method, validate_reference_strategy
+from stackalign.backends.execution import apply_tyx_substack, fit_frames_to_reference, fit_previous_pairwise
+from stackalign.backends.transforms import accumulate_pairwise_tmats, validate_reference_strategy
+
+from .utils import apply_frame_tmat_task, register_frame_to_reference_task, register_previous_pair_task, validate_method
+
 
 
 def fit_time(array: NDArray[np.generic], axes: str, method: Method = "translation", reference_strategy: ReferenceStrategy = "first", fit_channel: int | None = None) -> TransformModel:
@@ -43,7 +48,7 @@ def apply_time(array: NDArray[np.generic], axes: str, model: TransformModel) -> 
     transformed_apply = np.empty(preparation.apply_array.shape, dtype=np.float32)
 
     for slicer, substack_tyx in preparation.iter_apply_tyx_substacks():
-        transformed_apply[slicer] = apply_tyx_substack(substack_tyx, tmats, model.method)
+        transformed_apply[slicer] = apply_tyx_substack(substack_tyx, tmats, partial(apply_frame_tmat_task, method=model.method))
 
     return preparation.restore_apply_output(transformed_apply)
 
@@ -54,14 +59,14 @@ def _fit_time_tmats(fit_array_tyx: NDArray[np.float32], method: Method, referenc
 
     if reference_strategy == "first":
         reference = np.asarray(fit_array_tyx[0], dtype=np.float32)
-        return fit_frames_to_reference(fit_array_tyx, reference=reference, method=method)
+        return fit_frames_to_reference(fit_array_tyx, reference, partial(register_frame_to_reference_task, method=method))
 
     if reference_strategy == "mean":
         reference = np.asarray(fit_array_tyx.mean(axis=0), dtype=np.float32)
-        return fit_frames_to_reference(fit_array_tyx, reference=reference, method=method)
+        return fit_frames_to_reference(fit_array_tyx, reference, partial(register_frame_to_reference_task, method=method))
 
     if reference_strategy == "previous":
-        pairwise_tmats = fit_previous_pairwise_tmats(fit_array_tyx, method=method)
+        pairwise_tmats = fit_previous_pairwise(fit_array_tyx, partial(register_previous_pair_task, method=method))
         return accumulate_pairwise_tmats(pairwise_tmats)
 
     raise ValueError(f"Unsupported reference_strategy='{reference_strategy}'.")

@@ -4,28 +4,33 @@ from functools import partial
 
 import numpy as np
 from numpy.typing import NDArray
+from scipy.ndimage import shift as ndimage_shift
+from skimage.registration import phase_cross_correlation
 
+from stackalign.backends.execution import apply_cyx_substack
 from stackalign.backends.models import TransformModel
+from stackalign.backends.transforms import identity_tmats
 from stackalign.constants import Method
 from stackalign.preparation import ApplyPreparation, FitPreparation
 
-from stackalign.backends.execution import apply_cyx_substack
-from stackalign.backends.transforms import identity_tmats
-
-from .utils import apply_channel_image_task, create_stackreg, validate_method
+from .utils import shift_to_tmat, validate_method
 
 
-def fit_channel(array: NDArray[np.generic], axes: str, method: Method = "translation", reference_channel: int | None = None, reference_frame: int = 0) -> TransformModel:
-    """
-    Fit channel-wise transforms as explicit per-channel transformation matrices.
-    """
+def fit_channel(
+    array: NDArray[np.generic],
+    axes: str,
+    method: Method = "translation",
+    reference_channel: int | None = None,
+    reference_frame: int = 0,
+) -> TransformModel:
     validate_method(method)
 
     preparation = FitPreparation.for_channel(
         array=array,
         axes=axes,
         reference_channel=reference_channel,
-        reference_frame=reference_frame,)
+        reference_frame=reference_frame,
+    )
     fit_array = preparation.fit_array
     if fit_array is None:
         raise RuntimeError("Internal error: fit array was not prepared for fit_channel().")
@@ -34,19 +39,27 @@ def fit_channel(array: NDArray[np.generic], axes: str, method: Method = "transla
 
     c_len = fit_array.shape[0]
     tmats = identity_tmats(c_len)
-    reference_image = fit_array[reference_channel]
+    reference_image = np.asarray(fit_array[reference_channel], dtype=np.float32)
 
     for channel_index in range(c_len):
         if channel_index == reference_channel:
             continue
-        sr = create_stackreg(method)
-        tmats[channel_index] = sr.register(reference_image, fit_array[channel_index])
+
+        moving_image = np.asarray(fit_array[channel_index], dtype=np.float32)
+        shift_yx, *_ = phase_cross_correlation(
+            reference_image,
+            moving_image,
+            normalization=None,
+            upsample_factor=1,
+        )
+        tmats[channel_index] = shift_to_tmat(shift_yx)
 
     return TransformModel(
         mode="channel",
-        method=method,
+        method="translation",
         transform=tmats,
-        reference_channel=reference_channel)
+        reference_channel=reference_channel,
+    )
 
 
 def apply_channel(array: NDArray[np.generic], axes: str, model: TransformModel) -> NDArray[np.generic]:
@@ -66,9 +79,26 @@ def apply_channel(array: NDArray[np.generic], axes: str, model: TransformModel) 
     c_len = preparation.apply_array.shape[preparation.apply_axes.index("C")]
 
     if tmats.shape[0] != c_len:
-        raise ValueError(f"Channel model length must match array C length. Got {tmats.shape[0]} transforms for C={c_len}.")
+        raise ValueError(
+            f"Channel model length must match array C length. Got {tmats.shape[0]} transforms for C={c_len}."
+        )
 
     for slicer, substack_cyx in preparation.iter_apply_cyx_substacks():
-        transformed_apply[slicer] = apply_cyx_substack(substack_cyx, tmats, model.reference_channel, partial(apply_channel_image_task, method=model.method))
+        transformed_apply[slicer] = apply_cyx_substack(
+            substack_cyx,
+            tmats,
+            model.reference_channel,
+            partial(_apply_channel_image_task),
+        )
 
     return preparation.restore_apply_output(transformed_apply)
+
+
+def _apply_channel_image_task(
+    channel_index: int,
+    image: NDArray[np.float32],
+    tmat: NDArray[np.float64],
+) -> tuple[int, NDArray[np.float32]]:
+    shift_yx = (tmat[1, 2], tmat[0, 2])
+    transformed = ndimage_shift(image, shift=shift_yx)
+    return channel_index, np.asarray(transformed, dtype=np.float32)

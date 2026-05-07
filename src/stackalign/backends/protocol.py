@@ -9,6 +9,22 @@ from stackalign.constants import Method, ReferenceStrategy
 from stackalign.backends.models import TransformModel
 
 
+class FrameApplyFn(Protocol):
+    def __call__(self, frame_index: int, frame: NDArray[np.float32], tmat: NDArray[np.float64]) -> tuple[int, NDArray[np.float32]]: ...
+
+
+class ChannelApplyFn(Protocol):
+    def __call__(self, channel_index: int, image: NDArray[np.float32], tmat: NDArray[np.float64]) -> tuple[int, NDArray[np.float32]]: ...
+
+
+class FrameFitFn(Protocol):
+    def __call__(self, frame_index: int, reference: NDArray[np.float32], moving: NDArray[np.float32]) -> tuple[int, NDArray[np.float64]]: ...
+
+
+class PairFitFn(Protocol):
+    def __call__(self, frame_index: int, previous: NDArray[np.float32], current: NDArray[np.float32]) -> tuple[int, NDArray[np.float64]]: ...
+
+
 @runtime_checkable
 class Backend(Protocol):
     """
