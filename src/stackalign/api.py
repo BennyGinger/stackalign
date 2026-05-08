@@ -101,23 +101,23 @@ if __name__ == "__main__":
     from fits_io import FitsIO
     from tifffile import imwrite
     
-    path = Path("/media/ben/Analysis/Python/Images/NeutrophilTrackingTest/dia/c1133-MaxIP.nd2 - c1133-MaxIP.nd2 (series 1).tif")
+    path = Path("/media/ben/Analysis/Python/Images/NeutrophilTrackingTest/dia/c1133-MaxIP_s1/fits_array.tif")
     
     reader = FitsIO.from_path(path)
     array = reader.get_array()
-    
     if isinstance(array, list):
         array = array[0]
+    print(f"Original array shape: {array.shape}, dtype: {array.dtype} and axes: {reader.axes}")
     
     
     # # Time-wise example usage
-    # bf = array[:,3,:,:]  # take one channel for testing
+    # bf = array[:,2,:,:]  # take one channel for testing
     # bf_axis = reader.axes[0].replace("C", "")  # pretend this is a ZYX stack for testing 
     # print(f"Input array shape: {bf.shape}, dtype: {bf.dtype} and axes: {bf_axis}")
     # t0 = time()
     # register = RegisterModel(backend="cv2")
     # register.fit_time(array=bf, axes=bf_axis, 
-    #                   method="affine", 
+    #                   method="translation", 
     #                   reference_strategy="previous")
     # print(f"Fitting completed in {time() - t0:.2f} seconds.")
     # t1 = time()
@@ -129,10 +129,10 @@ if __name__ == "__main__":
     # print(f"Registration completed in {time() - t0:.2f} seconds.")
     
     # Channel-wise example usage
-    chan_arr = array[:, :2, :, :]  # take first 4 channels for testing
+    chan_arr = array[:, :2, :, :] 
     print(f"Input array shape: {chan_arr.shape}, dtype: {chan_arr.dtype}")
     t0 = time()
-    register = RegisterModel(backend="pystackreg")
+    register = RegisterModel(backend="cv2")
     register.fit_channel(array=chan_arr, axes=reader.axes[0],
                          method="translation",
                          reference_channel=1,
