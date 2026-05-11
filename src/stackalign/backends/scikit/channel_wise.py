@@ -16,21 +16,14 @@ from stackalign.preparation import ApplyPreparation, FitPreparation
 from .utils import shift_to_tmat, validate_method
 
 
-def fit_channel(
-    array: NDArray[np.generic],
-    axes: str,
-    method: Method = "translation",
-    reference_channel: int | None = None,
-    reference_frame: int = 0,
-) -> TransformModel:
+def fit_channel(array: NDArray[np.generic], axes: str, method: Method = "translation", reference_channel: int | None = None, reference_frame: int = 0) -> TransformModel:
     validate_method(method)
 
     preparation = FitPreparation.for_channel(
         array=array,
         axes=axes,
         reference_channel=reference_channel,
-        reference_frame=reference_frame,
-    )
+        reference_frame=reference_frame,)
     fit_array = preparation.fit_array
     if fit_array is None:
         raise RuntimeError("Internal error: fit array was not prepared for fit_channel().")
@@ -49,17 +42,15 @@ def fit_channel(
         shift_yx, *_ = phase_cross_correlation(
             reference_image,
             moving_image,
-            normalization=None,
-            upsample_factor=1,
-        )
+            normalization=None, # type: ignore[call-overload]
+            upsample_factor=1,)
         tmats[channel_index] = shift_to_tmat(shift_yx)
 
     return TransformModel(
         mode="channel",
         method="translation",
         transform=tmats,
-        reference_channel=reference_channel,
-    )
+        reference_channel=reference_channel,)
 
 
 def apply_channel(array: NDArray[np.generic], axes: str, model: TransformModel) -> NDArray[np.generic]:
@@ -79,26 +70,19 @@ def apply_channel(array: NDArray[np.generic], axes: str, model: TransformModel) 
     c_len = preparation.apply_array.shape[preparation.apply_axes.index("C")]
 
     if tmats.shape[0] != c_len:
-        raise ValueError(
-            f"Channel model length must match array C length. Got {tmats.shape[0]} transforms for C={c_len}."
-        )
+        raise ValueError(f"Channel model length must match array C length. Got {tmats.shape[0]} transforms for C={c_len}.")
 
     for slicer, substack_cyx in preparation.iter_apply_cyx_substacks():
         transformed_apply[slicer] = apply_cyx_substack(
             substack_cyx,
             tmats,
             model.reference_channel,
-            partial(_apply_channel_image_task),
-        )
+            partial(_apply_channel_image_task),)
 
     return preparation.restore_apply_output(transformed_apply)
 
 
-def _apply_channel_image_task(
-    channel_index: int,
-    image: NDArray[np.float32],
-    tmat: NDArray[np.float64],
-) -> tuple[int, NDArray[np.float32]]:
+def _apply_channel_image_task(channel_index: int, image: NDArray[np.float32], tmat: NDArray[np.float64]) -> tuple[int, NDArray[np.float32]]:
     shift_yx = (tmat[1, 2], tmat[0, 2])
     transformed = ndimage_shift(image, shift=shift_yx)
     return channel_index, np.asarray(transformed, dtype=np.float32)

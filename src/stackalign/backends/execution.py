@@ -11,7 +11,7 @@ from stackalign.backends.protocol import ChannelApplyFn, FrameApplyFn, FrameFitF
 
 ExecutorMode = Literal["thread", "process"]
 
-EXECUTOR_MODE: ExecutorMode = "process"
+EXECUTOR_MODE: ExecutorMode = "process" 
 MAX_WORKERS: int | None = None
 
 
@@ -53,8 +53,8 @@ def apply_cyx_substack(substack_cyx: NDArray[np.float32], tmats: NDArray[np.floa
     """
     Apply per-channel transforms to a CYX substack using *channel_apply_fn*.
 
-    The reference channel is copied unchanged. *channel_apply_fn* must be a
-    top-level, picklable callable with the signature::
+    The reference channel is copied unchanged. Non-reference channels are
+    processed serially in-process using the signature::
 
         channel_apply_fn(channel_index, image, tmat) -> (channel_index, transformed)
 
@@ -68,16 +68,11 @@ def apply_cyx_substack(substack_cyx: NDArray[np.float32], tmats: NDArray[np.floa
     
     transformed = np.empty_like(substack_cyx, dtype=np.float32)
     transformed[reference_channel] = substack_cyx[reference_channel]
-    with create_executor(EXECUTOR_MODE, MAX_WORKERS) as executor:
-        futures = [
-            executor.submit(channel_apply_fn, channel_index, substack_cyx[channel_index], tmats[channel_index])
-            for channel_index in range(substack_cyx.shape[0])
-            if channel_index != reference_channel
-        ]
-        
-        for future in as_completed(futures):
-            channel_index, transformed_channel = future.result()
-            transformed[channel_index] = transformed_channel
+    for channel_index in range(substack_cyx.shape[0]):
+        if channel_index == reference_channel:
+            continue
+        _, transformed_channel = channel_apply_fn(channel_index, substack_cyx[channel_index], tmats[channel_index])
+        transformed[channel_index] = transformed_channel
     return transformed
 
 

@@ -110,38 +110,39 @@ if __name__ == "__main__":
     print(f"Original array shape: {array.shape}, dtype: {array.dtype} and axes: {reader.axes}")
     
     
-    # # Time-wise example usage
-    # bf = array[:,2,:,:]  # take one channel for testing
-    # bf_axis = reader.axes[0].replace("C", "")  # pretend this is a ZYX stack for testing 
-    # print(f"Input array shape: {bf.shape}, dtype: {bf.dtype} and axes: {bf_axis}")
+    # Time-wise example usage
+    bf = array[:,2,:,:]  # take one channel for testing
+    bf_axis = reader.axes[0].replace("C", "")  # pretend this is a ZYX stack for testing 
+    print(f"Input array shape: {bf.shape}, dtype: {bf.dtype} and axes: {bf_axis}")
+    register = RegisterModel(backend="pystackreg")
+    for _ in range(5):  # run multiple times to get an idea of runtime variability
+        t0 = time()
+        register.fit_time(array=bf, axes=bf_axis, 
+                        method="translation", 
+                        reference_strategy="previous")
+        print(f"Fitting completed in {time() - t0:.2f} seconds.")
+        t1 = time()
+        transformed = register.apply(array=bf, axes=bf_axis)
+        print(f"Applying transforms completed in {time() - t1:.2f} seconds.")
+        t2 = time()
+        # imwrite(path.with_name(path.stem + "_registered.tif"), transformed)
+        # print(f"Saving registered array completed in {time() - t2:.2f} seconds.")
+        print(f"Registration completed in {time() - t0:.2f} seconds.")
+    
+    # # Channel-wise example usage
+    # chan_arr = array[:, :2, :, :] 
+    # print(f"Input array shape: {chan_arr.shape}, dtype: {chan_arr.dtype}")
     # t0 = time()
     # register = RegisterModel(backend="cv2")
-    # register.fit_time(array=bf, axes=bf_axis, 
-    #                   method="translation", 
-    #                   reference_strategy="previous")
+    # register.fit_channel(array=chan_arr, axes=reader.axes[0],
+    #                      method="translation",
+    #                      reference_channel=1,
+    #                      reference_frame=0)
     # print(f"Fitting completed in {time() - t0:.2f} seconds.")
     # t1 = time()
-    # transformed = register.apply(array=bf, axes=bf_axis)
+    # transformed = register.apply(array=chan_arr, axes=reader.axes[0])
     # print(f"Applying transforms completed in {time() - t1:.2f} seconds.")
     # t2 = time()
-    # imwrite(path.with_name(path.stem + "_registered.tif"), transformed)
+    # imwrite(path.with_name(path.stem + "_channel_registered.tif"), transformed)
     # print(f"Saving registered array completed in {time() - t2:.2f} seconds.")
-    # print(f"Registration completed in {time() - t0:.2f} seconds.")
-    
-    # Channel-wise example usage
-    chan_arr = array[:, :2, :, :] 
-    print(f"Input array shape: {chan_arr.shape}, dtype: {chan_arr.dtype}")
-    t0 = time()
-    register = RegisterModel(backend="cv2")
-    register.fit_channel(array=chan_arr, axes=reader.axes[0],
-                         method="translation",
-                         reference_channel=1,
-                         reference_frame=0)
-    print(f"Fitting completed in {time() - t0:.2f} seconds.")
-    t1 = time()
-    transformed = register.apply(array=chan_arr, axes=reader.axes[0])
-    print(f"Applying transforms completed in {time() - t1:.2f} seconds.")
-    t2 = time()
-    imwrite(path.with_name(path.stem + "_channel_registered.tif"), transformed)
-    print(f"Saving registered array completed in {time() - t2:.2f} seconds.")
-    print(f"Channel registration completed in {time() - t0:.2f} seconds.")
+    # print(f"Channel registration completed in {time() - t0:.2f} seconds.")
