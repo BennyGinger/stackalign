@@ -8,7 +8,6 @@ from stackalign.backends import Backend, get_backend
 from stackalign.constants import Method, ReferenceStrategy
 from stackalign.backends.models import TransformModel
 
-
 class RegisterModel:
     """User-facing registration entry point."""
 
@@ -30,7 +29,7 @@ class RegisterModel:
         reference_strategy:
             Reference policy for time fitting: first, previous, mean.
         fit_channel:
-            Channel index used for fitting when working with TCYX data.
+            Channel index used for fitting when working with TCYX data. If None, the first channel (index 0) will be used by default. This parameter is ignored for non-TCYX data.
         
         Returns
         -------
@@ -95,6 +94,8 @@ class RegisterModel:
             raise RuntimeError("No fitted transform model is available. Call fit_time() or fit_channel() first.")
         return self._backend.apply(array=array, axes=axes, model=self._model)
     
+    
+    
 if __name__ == "__main__":
     from pathlib import Path
     from time import time
@@ -104,7 +105,7 @@ if __name__ == "__main__":
     path = Path("/media/ben/Analysis/Python/Images/NeutrophilTrackingTest/dia/c1133-MaxIP_s1/fits_array.tif")
     
     reader = FitsIO.from_path(path)
-    array = reader.get_array()
+    array = reader.get_array().array
     if isinstance(array, list):
         array = array[0]
     print(f"Original array shape: {array.shape}, dtype: {array.dtype} and axes: {reader.axes}")
