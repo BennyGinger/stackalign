@@ -4,7 +4,8 @@ import numpy as np
 import numpy.testing as npt
 import pytest
 
-from stackalign.backends import Cv2Backend, get_backend
+from stackalign.backends import get_backend
+from stackalign.backends.cv2 import Cv2Backend
 from stackalign.backends.cv2.utils import cv2_warp_to_tmat, tmat_to_cv2_warp
 
 

@@ -1,7 +1,15 @@
 # stackalign (internal)
 
-Lightweight registration module for microscopy stacks.
+Lightweight registration module for microscopy stacks. It estimates explicit
+2D transform matrices for time-wise drift or cross-channel offsets, then applies
+those transforms to the complete array while preserving its shape and dtype.
+OpenCV, scikit-image, and pystackreg implementations share the same façade.
+
 **Not a public library.** Designed for clarity, determinism, and real-world performance.
+
+Within FITS, `stackalign` owns registration mathematics only. FITS resolves the
+registration scenario, loads arrays and axes, records provenance, and saves the
+registered artifact.
 
 ---
 

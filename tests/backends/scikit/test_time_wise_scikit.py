@@ -4,7 +4,8 @@ import numpy as np
 import numpy.testing as npt
 import pytest
 
-from stackalign.backends import ScikitBackend, get_backend
+from stackalign.backends import get_backend
+from stackalign.backends.scikit import ScikitBackend
 from stackalign.backends.scikit.utils import shift_to_tmat
 
 
@@ -51,7 +52,7 @@ def test_get_backend_returns_scikit_backend() -> None:
 
 
 def test_get_backend_pystackreg_still_works() -> None:
-    from stackalign.backends import PystackregBackend
+    from stackalign.backends.pystackreg import PystackregBackend
     backend = get_backend("pystackreg")
     assert isinstance(backend, PystackregBackend)
 
