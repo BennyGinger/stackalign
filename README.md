@@ -23,6 +23,15 @@ Everything is based on **explicit transform matrices**:
 Fit once → apply anywhere
 No hidden state, no implicit behavior.
 
+`RegisterModel.model` returns a detached `TransformModel` for persistence;
+`RegisterModel(backend).set_model(model)` restores it without fitting.
+`apply_plane(image, frame=..., channel=...)` applies the corresponding matrix
+with the same backend interpolation and dtype restoration as whole-stack apply.
+The backend name must be retained alongside a model because matrix conventions
+and interpolation differ between backends. `stackalign.planes.fit_planes`
+supports serial TYX/CYX fitting, progress, cancellation, and channel exclusions
+for interactive clients. Persistence and input/cache validation remain FITS-owned.
+
 ---
 
 ## Pipeline

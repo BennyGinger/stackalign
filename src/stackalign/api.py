@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+from collections.abc import Sequence
 from numpy.typing import NDArray
 from typing import Self
 
@@ -12,8 +13,44 @@ class RegisterModel:
     """User-facing registration entry point."""
 
     def __init__(self, backend: str = "pystackreg") -> None:
+        self.backend = backend.lower()
         self._backend: Backend = get_backend(backend)
         self._model: TransformModel | None = None
+
+    @property
+    def model(self) -> TransformModel:
+        """Return a detached model suitable for persistence and later reuse."""
+        if self._model is None:
+            raise RuntimeError("No fitted transform model is available.")
+        return TransformModel(self._model.mode, self._model.method,
+                              self._model.transform.copy(), self._model.reference_channel)
+
+    def set_model(self, model: TransformModel) -> Self:
+        """Restore explicit matrices without repeating registration fitting."""
+        from stackalign.planes import plane_functions
+        plane_functions(self.backend, model.method)
+        matrices = np.asarray(model.transform, dtype=np.float64)
+        if (model.mode not in ("time", "channel") or matrices.ndim != 3
+                or matrices.shape[1:] != (3, 3) or not len(matrices)
+                or not np.isfinite(matrices).all()):
+            raise ValueError("Invalid fitted registration model.")
+        if model.mode == "channel" and (model.reference_channel is None
+                or not 0 <= model.reference_channel < len(matrices)):
+            raise ValueError("Invalid reference channel in fitted registration model.")
+        self._model = TransformModel(model.mode, model.method, matrices.copy(), model.reference_channel)
+        return self
+
+    def apply_plane(self, array: NDArray, *, frame: int = 0, channel: int = 0) -> NDArray:
+        """Apply one fitted transform with the backend's normal dtype restoration."""
+        from stackalign.planes import apply_plane
+        if self._model is None:
+            raise RuntimeError("No fitted transform model is available.")
+        if self._model.mode == "channel" and channel == self._model.reference_channel:
+            return array.copy()
+        index = frame if self._model.mode == "time" else channel
+        if not 0 <= index < len(self._model.transform):
+            raise IndexError("Plane index is outside the fitted transform model.")
+        return apply_plane(array, self._model.transform[index], self.backend, self._model.method)
 
     def fit_time(self, array: NDArray[np.generic], axes: str, method: Method = "translation", reference_strategy: ReferenceStrategy = "first", fit_channel: int | None = None) -> Self:
         """Fit time-wise transforms and store them on this RegisterModel.
@@ -44,7 +81,7 @@ class RegisterModel:
             fit_channel=fit_channel,)
         return self
 
-    def fit_channel(self, array: NDArray[np.generic], axes: str, method: Method = "translation", reference_channel: int | None = None, reference_frame: int = 0) -> Self:
+    def fit_channel(self, array: NDArray[np.generic], axes: str, method: Method = "translation", reference_channel: int | None = None, reference_frame: int = 0, exclude_channels: Sequence[int] | None = None) -> Self:
         """
         Fit channel-wise transforms and store them on this RegisterModel.
         
@@ -60,12 +97,23 @@ class RegisterModel:
             Channel index used as reference for channel fitting. If None, the reference channel will be determined automatically as the channel with the highest average intensity across frames.
         reference_frame:
             Frame index used as reference for channel fitting. Default is 0.
+        exclude_channels:
+            Optional channel positions to leave unchanged, without fitting them.
         
         Returns
         -------
         self
             This RegisterModel instance with fitted channel-wise transforms. Call apply() to apply the transforms to compatible arrays.
         """
+        if exclude_channels:
+            from stackalign.planes import fit_planes
+            from stackalign.preparation import FitPreparation
+            preparation = FitPreparation.for_channel(array, axes, reference_channel, reference_frame)
+            assert preparation.fit_array is not None and reference_channel is not None
+            matrices = fit_planes(preparation.fit_array, backend=self.backend, method=method,
+                                  reference=reference_channel, excluded=exclude_channels)
+            self._model = TransformModel("channel", method, matrices, reference_channel)
+            return self
         self._model = self._backend.fit_channel(
             array=array,
             axes=axes,
