@@ -28,9 +28,50 @@ No hidden state, no implicit behavior.
 `apply_plane(image, frame=..., channel=...)` applies the corresponding matrix
 with the same backend interpolation and dtype restoration as whole-stack apply.
 The backend name must be retained alongside a model because matrix conventions
-and interpolation differ between backends. `stackalign.planes.fit_planes`
-supports serial TYX/CYX fitting, progress, cancellation, and channel exclusions
-for interactive clients. Persistence and input/cache validation remain FITS-owned.
+and interpolation differ between backends. Public `fit_time_planes()` and
+`fit_channel_planes()` methods accept prepared TYX/CYX arrays, including memmaps,
+with the same execution, progress, cancellation, and exclusion behavior as the
+full-array API. Persistence and input/cache validation remain FITS-owned.
+
+```python
+from stackalign import RegisterModel
+
+register = RegisterModel("pystackreg", execution="auto", workers=4)
+register.fit_time(array, "TCYX", fit_channel=1, method="affine",
+                  reference_strategy="previous", progress=on_progress,
+                  cancelled=is_cancelled)
+registered = register.apply(array, "TCYX", out=output_memmap,
+                            progress=on_progress, cancelled=is_cancelled)
+```
+
+The four modes are `"auto"` (default), `"serial"`, `"thread"`, and `"process"`.
+Auto chooses separately for fitting and application using the backend, method,
+pixels per plane, actual independent job count, and available CPUs. It uses
+conservative estimates from [the short benchmark](benchmarks/README.md), without
+running benchmarks during registration. Small work and single-job operations
+run serially; larger PyStackReg work uses processes, while OpenCV/scikit-image
+use threads. Explicit modes override this policy.
+
+`workers=None` uses up to four available CPUs, capped by the number of tasks.
+Auto also caps an explicit worker limit by CPU availability. Where the OS exposes
+available physical memory, auto avoids processes if estimated worker workspaces
+would exceed half of that memory. This is a rough guard; native backend memory
+use can vary. Serial execution
+creates no pool. Process execution uses spawn, so scripts must launch work under
+`if __name__ == "__main__":`; calls from a GUI background thread are supported.
+
+Progress callbacks receive `(completed, total)` for actual fits or transformed
+planes, beginning at zero. Both callbacks execute in the calling thread and do
+not need to be picklable. Cancellation raises `InterruptedError`, stops further
+submissions, cancels queued tasks, and waits for native operations already running.
+A cancelled or failed refit keeps the previous fitted model.
+
+Application uses one pool across the complete stack, with at most twice the
+worker count queued. Dtype restoration happens per plane, avoiding a full
+floating-point output copy. An optional `out` array must be writable, have the
+input shape/dtype, and not overlap the input. It may be a memmap. Callers own
+flushing, cleanup, and publication; failures can leave partial values in `out`.
+Single-image `apply_plane()` runs directly without creating a pool.
 
 ---
 
@@ -47,11 +88,12 @@ for interactive clients. Persistence and input/cache validation remain FITS-owne
    * restore shape/dtype on apply
 3. **backends/**
 
-   * `time_wise.py` / `channel_wise.py` → logic
-   * `execution.py` → parallelism
-   * backend-specific implementations
+   * `time_wise.py` / `channel_wise.py` → backend kernels
+   * `execution.py` → automatic selection and bounded serial/thread/process execution
+   * facades → compatibility with the shared public implementation
 4. **models.py** → `TransformModel`
-5. **api.py** → `RegisterModel` entry point
+5. **planes.py** → shared fitting and per-plane stack application
+6. **api.py** → `RegisterModel` entry point
 
 ---
 
@@ -109,9 +151,9 @@ Apply:
 
 ### 5. Parallelism is internal
 
-* process-based by default
-* handled in `execution.py`
-* not exposed to user
+* explicit serial, thread, or process execution
+* worker limit configured per `RegisterModel`
+* handled in `execution.py`, shared across backends and fitting/application
 
 ---
 
@@ -216,6 +258,26 @@ Defaults:
 * avoid large array copies
 * operate on small independent tasks
 * parallelize per frame/channel
+
+`previous` fits each pair of original adjacent frames independently, then
+accumulates matrices in frame order. Fitting can therefore use any execution
+mode without changing the accumulation order. Thread speed depends on the
+backend's native code; process startup and array transfers can outweigh gains
+on small workloads. Benchmark the intended workload before choosing a mode.
+
+A short developer benchmark estimates execution cutoffs using four LTB4 frames
+at four image sizes, with a three-minute budget. It includes pool startup and
+checks matrices and output pixels against serial execution. The source TIFF is
+read only; StackAlign uses the estimates in its conservative automatic policy.
+
+```bash
+python stackalign/benchmarks/estimate_cutoff.py /path/to/fits_array.tif
+```
+
+See [the rough cutoff estimates](benchmarks/README.md) and
+[measured timings](benchmarks/timings.csv). These are starting points for this
+workload and computer, rather than universal array-size thresholds. The benchmark
+requires `tifffile` and OpenCV, available in the FITS development environment.
 
 ---
 

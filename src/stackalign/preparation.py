@@ -20,6 +20,9 @@ class FitPreparation:
 
     @classmethod
     def for_time(cls, array: NDArray[np.generic], axes: str, fit_channel: int | None = None) -> FitPreparation:
+        """
+        Prepare the selected time fitting planes and their axis metadata.
+        """
         source = np.asarray(array)
         source_axes = normalize_axes(source, axes)
         require_axes_member(source_axes, "T", "fit_time")
@@ -36,6 +39,9 @@ class FitPreparation:
 
     @staticmethod
     def _build_time_fit_view(source_array: NDArray[np.generic], source_axes: str, fit_channel: int | None) -> tuple[NDArray[np.float32], str]:
+        """
+        Select the fitting channel and project Z into a float32 TYX array.
+        """
         work = source_array
         work_axes = source_axes
 
@@ -47,14 +53,16 @@ class FitPreparation:
             if not (0 <= fit_channel < work.shape[c_index]):
                 raise ValueError(f"fit_channel={fit_channel} is out of range for C={work.shape[c_index]}.")
             
-            work = np.take(work, indices=fit_channel, axis=c_index)
+            selection: list[slice | int] = [slice(None)] * work.ndim
+            selection[c_index] = fit_channel
+            work = work[tuple(selection)]
             work_axes = work_axes.replace("C", "")
         elif fit_channel is not None:
             raise ValueError("fit_channel was provided but axes does not include C.")
 
         if "Z" in work_axes:
             z_index = work_axes.index("Z")
-            work = np.asarray(work, dtype=np.float32).max(axis=z_index)
+            work = work.max(axis=z_index)
             work_axes = work_axes.replace("Z", "")
 
         if sorted(work_axes) != sorted("TYX"):
@@ -67,6 +75,9 @@ class FitPreparation:
 
     @classmethod
     def for_channel(cls, array: NDArray[np.generic], axes: str, reference_channel: int | None, reference_frame: int = 0) -> FitPreparation:
+        """
+        Prepare the selected channel fitting planes and their axis metadata.
+        """
         source = np.asarray(array)
         source_axes = normalize_axes(source, axes)
         require_axes_member(source_axes, "C", "fit_channel")
@@ -87,6 +98,9 @@ class FitPreparation:
 
     @staticmethod
     def _build_channel_fit_view(source_array: NDArray[np.generic], source_axes: str, reference_channel: int | None, reference_frame: int = 0) -> tuple[NDArray[np.float32], str]:
+        """
+        Select the reference frame and project Z into a float32 CYX array.
+        """
         work = source_array
         work_axes = source_axes
 
@@ -100,14 +114,16 @@ class FitPreparation:
             t_index = work_axes.index("T")
             if not (0 <= reference_frame < work.shape[t_index]):
                 raise ValueError(f"reference_frame={reference_frame} is out of range for T={work.shape[t_index]}.")
-            work = np.take(work, indices=reference_frame, axis=t_index)
+            selection: list[slice | int] = [slice(None)] * work.ndim
+            selection[t_index] = reference_frame
+            work = work[tuple(selection)]
             work_axes = work_axes.replace("T", "")
         elif reference_frame != 0:
             raise ValueError("reference_frame requires a T axis unless it is 0.")
 
         if "Z" in work_axes:
             z_index = work_axes.index("Z")
-            work = np.asarray(work, dtype=np.float32).max(axis=z_index)
+            work = work.max(axis=z_index)
             work_axes = work_axes.replace("Z", "")
 
         if sorted(work_axes) != sorted("CYX"):
@@ -131,6 +147,9 @@ class ApplyPreparation:
 
     @classmethod
     def for_time(cls, array: NDArray[np.generic], axes: str) -> ApplyPreparation:
+        """
+        Create a canonical time application view without copying pixels
+        """
         source = np.asarray(array)
         source_axes = normalize_axes(source, axes)
         require_axes_member(source_axes, "T", "apply_time")
@@ -148,6 +167,9 @@ class ApplyPreparation:
 
     @classmethod
     def for_channel(cls, array: NDArray[np.generic], axes: str) -> ApplyPreparation:
+        """
+        Create a canonical channel application view without copying pixels.
+        """
         source = np.asarray(array)
         source_axes = normalize_axes(source, axes)
         require_axes_member(source_axes, "C", "apply_channel")
@@ -191,11 +213,15 @@ class ApplyPreparation:
             yield slicer, np.asarray(self.apply_array[slicer], dtype=np.float32)
 
     def iter_apply_tyx_substacks(self) -> Iterator[tuple[tuple[slice | int, ...], NDArray[np.float32]]]:
-        """Iterate through TYX substacks. Convenience wrapper."""
+        """
+        Iterate through TYX substacks. Convenience wrapper.
+        """
         yield from self.iter_apply_substacks("TYX")
 
     def iter_apply_cyx_substacks(self) -> Iterator[tuple[tuple[slice | int, ...], NDArray[np.float32]]]:
-        """Iterate through CYX substacks. Convenience wrapper."""
+        """
+        Iterate through CYX substacks. Convenience wrapper.
+        """
         yield from self.iter_apply_substacks("CYX")
 
     def restore_apply_output(self, transformed_apply: NDArray[np.floating]) -> NDArray[np.generic]:
@@ -210,6 +236,9 @@ class ApplyPreparation:
 
     @staticmethod
     def _restore_dtype(array: NDArray[np.floating], target_dtype: np.dtype[np.generic]) -> NDArray[np.generic]:
+        """
+        Round and clip integer pixels, or cast floating results, to the target dtype.
+        """
         if array.dtype == target_dtype:
             return array
 

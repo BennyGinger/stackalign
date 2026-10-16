@@ -15,6 +15,7 @@ from .utils import shift_to_tmat, validate_method
 
 
 def fit_time(array: NDArray[np.generic], axes: str, method: str = "translation", reference_strategy: ReferenceStrategy = "first", fit_channel: int | None = None) -> TransformModel:
+    """Fit one global transform per frame using the selected reference strategy."""
     validate_method(method)
     validate_reference_strategy(reference_strategy)
 
@@ -28,6 +29,7 @@ def fit_time(array: NDArray[np.generic], axes: str, method: str = "translation",
 
 
 def apply_time(array: NDArray[np.generic], axes: str, model: TransformModel) -> NDArray[np.generic]:
+    """Apply each time transform to every channel and Z plane."""
     if model.mode != "time":
         raise ValueError(f"apply_time requires a time model. Got mode='{model.mode}'.")
     if not isinstance(model.transform, np.ndarray):
@@ -50,16 +52,19 @@ def apply_time(array: NDArray[np.generic], axes: str, model: TransformModel) -> 
 # ---------------------------------------------------------------------------
 
 def _fit_frame_to_reference_task(frame_index: int, reference: NDArray[np.float32], moving: NDArray[np.float32]) -> tuple[int, NDArray[np.float64]]:
+    """Fit a moving frame to its reference and return the indexed matrix."""
     shift, *_ = phase_cross_correlation(reference, moving, normalization=None) # type: ignore[no-untyped-call]
     return frame_index, shift_to_tmat(shift)
 
 
 def _fit_previous_pair_task(frame_index: int, previous: NDArray[np.float32], current: NDArray[np.float32]) -> tuple[int, NDArray[np.float64]]:
+    """Fit two adjacent original frames and return the indexed pairwise matrix."""
     shift, *_ = phase_cross_correlation(previous, current, normalization=None) # type: ignore[no-untyped-call]
     return frame_index, shift_to_tmat(shift)
 
 
 def _apply_frame_task(frame_index: int, frame: NDArray[np.float32], tmat: NDArray[np.float64]) -> tuple[int, NDArray[np.float32]]:
+    """Transform one frame and return it with its destination index."""
     shift_yx = (tmat[1, 2], tmat[0, 2])
     return frame_index, ndimage_shift(frame, shift=shift_yx).astype(np.float32)
 
@@ -69,6 +74,7 @@ def _apply_frame_task(frame_index: int, frame: NDArray[np.float32], tmat: NDArra
 # ---------------------------------------------------------------------------
 
 def _fit_time_tmats(fit_array_tyx: NDArray[np.float32], reference_strategy: ReferenceStrategy) -> NDArray[np.float64]:
+    """Fit time matrices and accumulate adjacent-frame transforms in frame order."""
     if fit_array_tyx.shape[0] == 0:
         raise ValueError("fit_time requires at least one frame. Got T=0.")
 

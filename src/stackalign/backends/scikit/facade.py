@@ -1,44 +1,46 @@
+"""Compatibility facade over the shared RegisterModel implementation."""
+
 from __future__ import annotations
 
-import numpy as np
 from numpy.typing import NDArray
 
+from stackalign.backends.execution import CancelCallback, ExecutionMode, ProgressCallback
 from stackalign.backends.models import TransformModel
 from stackalign.constants import Method, ReferenceStrategy
 
-from .channel_wise import apply_channel, fit_channel
-from .time_wise import apply_time, fit_time
-
 
 class ScikitBackend:
-    """Thin backend facade that dispatches to scikit-image registration modules.
+    def __init__(self, *, execution: ExecutionMode | None = None,
+                 workers: int | None = None) -> None:
+        """Set the backend and explicit execution options for registration."""
+        self.execution: ExecutionMode | None = execution
+        self.workers = workers
 
-    Currently supports time-wise translation only.
-    """
+    def fit_time(self, array: NDArray, axes: str, method: Method = "translation",
+                 reference_strategy: ReferenceStrategy = "first",
+                 fit_channel: int | None = None, *,
+                 progress: ProgressCallback | None = None,
+                 cancelled: CancelCallback | None = None) -> TransformModel:
+        """Fit one global transform per frame using the selected reference strategy."""
+        from stackalign.api import RegisterModel
+        return RegisterModel("scikit", execution=self.execution, workers=self.workers).fit_time(
+            array, axes, method, reference_strategy, fit_channel,
+            progress=progress, cancelled=cancelled).model
 
-    def fit_time(self, array: NDArray[np.generic], axes: str, method: Method = "translation", reference_strategy: ReferenceStrategy = "first", fit_channel: int | None = None) -> TransformModel:
-        return fit_time(
-            array=array,
-            axes=axes,
-            method=method,
-            reference_strategy=reference_strategy,
-            fit_channel=fit_channel,
-        )
+    def fit_channel(self, array: NDArray, axes: str, method: Method = "translation",
+                    reference_channel: int | None = None, reference_frame: int = 0, *,
+                    progress: ProgressCallback | None = None,
+                    cancelled: CancelCallback | None = None) -> TransformModel:
+        """Fit channel transforms at the selected reference frame."""
+        from stackalign.api import RegisterModel
+        return RegisterModel("scikit", execution=self.execution, workers=self.workers).fit_channel(
+            array, axes, method, reference_channel, reference_frame,
+            progress=progress, cancelled=cancelled).model
 
-    def apply(self, array: NDArray[np.generic], axes: str, model: TransformModel) -> NDArray[np.generic]:
-        if model.mode == "time":
-            return apply_time(array=array, axes=axes, model=model)
-
-        if model.mode == "channel":
-            return apply_channel(array=array, axes=axes, model=model)
-
-        raise RuntimeError(f"Unsupported transform mode '{model.mode}'.")
-
-    def fit_channel(self, array: NDArray[np.generic], axes: str, method: Method = "translation", reference_channel: int | None = None, reference_frame: int = 0) -> TransformModel:
-        return fit_channel(
-            array=array,
-            axes=axes,
-            method=method,
-            reference_channel=reference_channel,
-            reference_frame=reference_frame,
-        )
+    def apply(self, array: NDArray, axes: str, model: TransformModel, *,
+              out: NDArray | None = None, progress: ProgressCallback | None = None,
+              cancelled: CancelCallback | None = None) -> NDArray:
+        """Apply a fitted model while preserving the input axes and dtype."""
+        from stackalign.api import RegisterModel
+        return RegisterModel("scikit", execution=self.execution, workers=self.workers).set_model(
+            model).apply(array, axes, out=out, progress=progress, cancelled=cancelled)

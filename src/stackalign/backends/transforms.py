@@ -12,6 +12,7 @@ _VALID_REFERENCE_STRATEGIES: frozenset[str] = frozenset(_REFERENCE_STRATEGIES)
 
 
 def validate_reference_strategy(reference_strategy: str) -> None:
+    """Reject reference strategies other than first, mean, or previous."""
     if reference_strategy not in _VALID_REFERENCE_STRATEGIES:
         raise ValueError(f"Unsupported reference_strategy='{reference_strategy}'. Supported: {sorted(_VALID_REFERENCE_STRATEGIES)}")
 

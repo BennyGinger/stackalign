@@ -17,20 +17,24 @@ _METHOD_TO_CV2_MOTION: dict[str, int] = {
 
 
 def validate_method(method: str) -> None:
+    """Reject transformation methods unsupported by this backend."""
     if method not in _METHOD_TO_CV2_MOTION:
         raise ValueError(f"Unsupported method='{method}'. Supported methods: {sorted(_METHOD_TO_CV2_MOTION)}")
 
 
 def get_motion_model(method: Method) -> int:
+    """Return the OpenCV motion-model constant for the requested method."""
     return _METHOD_TO_CV2_MOTION[method]
 
 
 def create_initial_warp(method: Method) -> NDArray[np.float32]:
+    """Create an identity 2x3 warp after validating the requested method."""
     validate_method(method)
     return np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], dtype=np.float32)
 
 
 def cv2_warp_to_tmat(warp_matrix: NDArray[np.floating]) -> NDArray[np.float64]:
+    """Convert an OpenCV 2x3 warp into a homogeneous 3x3 matrix."""
     warp = np.asarray(warp_matrix, dtype=np.float64)
     if warp.shape != (2, 3):
         raise ValueError(f"warp_matrix must have shape (2, 3). Got {warp.shape}.")
@@ -46,6 +50,7 @@ def cv2_warp_to_tmat(warp_matrix: NDArray[np.floating]) -> NDArray[np.float64]:
 
 
 def tmat_to_cv2_warp(tmat: NDArray[np.floating], method: Method) -> NDArray[np.float32]:
+    """Convert a homogeneous 3x3 matrix into an OpenCV float32 warp."""
     validate_method(method)
 
     tmat_3x3 = np.asarray(tmat, dtype=np.float64)
@@ -56,6 +61,7 @@ def tmat_to_cv2_warp(tmat: NDArray[np.floating], method: Method) -> NDArray[np.f
 
 
 def normalize_for_ecc(image: NDArray[np.floating] | NDArray[np.integer]) -> NDArray[np.float32]:
+    """Scale an image into the zero-to-one float32 range for ECC fitting."""
     normalized = np.asarray(image, dtype=np.float32)
     normalized = normalized - normalized.min()
     max_value = normalized.max()
@@ -65,6 +71,7 @@ def normalize_for_ecc(image: NDArray[np.floating] | NDArray[np.integer]) -> NDAr
 
 
 def build_ecc_criteria() -> tuple[int, int, float]:
+    """Return the configured iteration limit and convergence tolerance for ECC."""
     return (
         cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT,
         ECC_MAX_ITER,

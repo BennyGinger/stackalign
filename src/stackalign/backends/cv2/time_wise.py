@@ -16,6 +16,7 @@ from .utils import build_ecc_criteria, create_initial_warp, cv2_warp_to_tmat, ge
 
 
 def fit_time(array: NDArray[np.generic], axes: str, method: Method = "translation", reference_strategy: ReferenceStrategy = "first", fit_channel: int | None = None) -> TransformModel:
+    """Fit one global transform per frame using the selected reference strategy."""
     validate_method(method)
     validate_reference_strategy(reference_strategy)
 
@@ -29,6 +30,7 @@ def fit_time(array: NDArray[np.generic], axes: str, method: Method = "translatio
 
 
 def apply_time(array: NDArray[np.generic], axes: str, model: TransformModel) -> NDArray[np.generic]:
+    """Apply each time transform to every channel and Z plane."""
     if model.mode != "time":
         raise ValueError(f"apply_time requires a time model. Got mode='{model.mode}'.")
     if not isinstance(model.transform, np.ndarray):
@@ -56,14 +58,17 @@ def apply_time(array: NDArray[np.generic], axes: str, model: TransformModel) -> 
 # ---------------------------------------------------------------------------
 
 def _fit_frame_to_reference_task(frame_index: int, reference: NDArray[np.float32], moving: NDArray[np.float32], method: Method) -> tuple[int, NDArray[np.float64]]:
+    """Fit a moving frame to its reference and return the indexed matrix."""
     return frame_index, _ecc_fit_to_tmat(reference, moving, method=method, frame_index=frame_index)
 
 
 def _fit_previous_pair_task(frame_index: int, previous: NDArray[np.float32], current: NDArray[np.float32], method: Method) -> tuple[int, NDArray[np.float64]]:
+    """Fit two adjacent original frames and return the indexed pairwise matrix."""
     return frame_index, _ecc_fit_to_tmat(previous, current, method=method, frame_index=frame_index)
 
 
 def _apply_frame_task(frame_index: int, frame: NDArray[np.float32], tmat: NDArray[np.float64], method: Method) -> tuple[int, NDArray[np.float32]]:
+    """Transform one frame and return it with its destination index."""
     warp = tmat_to_cv2_warp(tmat, method=method)
     frame_float = np.asarray(frame, dtype=np.float32)
     height, width = frame_float.shape
@@ -84,6 +89,7 @@ def _apply_frame_task(frame_index: int, frame: NDArray[np.float32], tmat: NDArra
 # ---------------------------------------------------------------------------
 
 def _fit_time_tmats(fit_array_tyx: NDArray[np.float32], method: Method, reference_strategy: ReferenceStrategy) -> NDArray[np.float64]:
+    """Fit time matrices and accumulate adjacent-frame transforms in frame order."""
     if fit_array_tyx.shape[0] == 0:
         raise ValueError("fit_time requires at least one frame. Got T=0.")
 
@@ -114,6 +120,7 @@ def _fit_time_tmats(fit_array_tyx: NDArray[np.float32], method: Method, referenc
 
 
 def _ecc_fit_to_tmat(reference: NDArray[np.float32], moving: NDArray[np.float32], method: Method, frame_index: int) -> NDArray[np.float64]:
+    """Estimate an ECC warp and convert it into a homogeneous matrix."""
     reference_norm = normalize_for_ecc(reference)
     moving_norm = normalize_for_ecc(moving)
     warp = create_initial_warp(method)

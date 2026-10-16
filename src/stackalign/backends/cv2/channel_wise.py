@@ -17,6 +17,7 @@ from .utils import tmat_to_cv2_warp, validate_method
 
 
 def fit_channel(array: NDArray[np.generic], axes: str, method: Method = "translation", reference_channel: int | None = None, reference_frame: int = 0) -> TransformModel:
+    """Fit channel transforms at the selected reference frame."""
     validate_method(method)
 
     preparation = FitPreparation.for_channel(
@@ -56,6 +57,7 @@ def fit_channel(array: NDArray[np.generic], axes: str, method: Method = "transla
 
 
 def apply_channel(array: NDArray[np.generic], axes: str, model: TransformModel) -> NDArray[np.generic]:
+    """Apply channel transforms and leave the reference channel unchanged."""
     if model.mode != "channel":
         raise ValueError(f"apply_channel requires a channel model. Got mode='{model.mode}'.")
     if not isinstance(model.transform, np.ndarray):
@@ -88,6 +90,7 @@ def apply_channel(array: NDArray[np.generic], axes: str, model: TransformModel) 
 
 
 def _apply_channel_image_task(channel_index: int, image: NDArray[np.float32], tmat: NDArray[np.float64], method: Method) -> tuple[int, NDArray[np.float32]]:
+    """Transform one channel image and return its indexed result."""
     warp = tmat_to_cv2_warp(tmat, method=method)
     image_float = np.asarray(image, dtype=np.float32)
     height, width = image_float.shape

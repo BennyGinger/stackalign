@@ -54,6 +54,7 @@ def apply_time(array: NDArray[np.generic], axes: str, model: TransformModel) -> 
 
 
 def _fit_time_tmats(fit_array_tyx: NDArray[np.float32], method: Method, reference_strategy: ReferenceStrategy) -> NDArray[np.float64]:
+    """Fit time matrices and accumulate adjacent-frame transforms in frame order."""
     if fit_array_tyx.shape[0] == 0:
         raise ValueError("fit_time requires at least one frame. Got T=0.")
 

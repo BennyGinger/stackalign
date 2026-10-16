@@ -50,6 +50,7 @@ def fit_channel(array: NDArray[np.generic], axes: str, method: Method = "transla
 
 
 def apply_channel(array: NDArray[np.generic], axes: str, model: TransformModel) -> NDArray[np.generic]:
+    """Apply channel transforms and leave the reference channel unchanged."""
     if model.mode != "channel":
         raise ValueError(f"apply_channel requires a channel model. Got mode='{model.mode}'.")
     if not isinstance(model.transform, np.ndarray):

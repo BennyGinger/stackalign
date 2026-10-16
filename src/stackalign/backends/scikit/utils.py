@@ -29,5 +29,6 @@ _SCIKIT_SUPPORTED_METHODS: frozenset[str] = frozenset({"translation"})
 
 
 def validate_method(method: str) -> None:
+    """Reject transformation methods unsupported by this backend."""
     if method not in _SCIKIT_SUPPORTED_METHODS:
         raise ValueError(f"scikit backend only supports method='translation'. Got '{method}'.")
