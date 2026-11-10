@@ -224,12 +224,12 @@ class RegisterModel:
 if __name__ == "__main__":
     from pathlib import Path
     from time import time
-    from fits_io import FitsIO
+    from scope_io import ScopeIO
     from tifffile import imwrite
 
     path = Path("/media/ben/Analysis/Python/Images/NeutrophilTrackingTest/dia/c1133-MaxIP_s1/fits_array.tif")
 
-    reader = FitsIO.from_path(path)
+    reader = ScopeIO.from_path(path)
     array = reader.get_array().array
     if isinstance(array, list):
         array = array[0]
